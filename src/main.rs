@@ -1,37 +1,61 @@
-use std::{
-    fs,
-    io::{self, Write},
-};
+extern crate pnet;
 
-// (Buf) Uncomment these lines to have the output buffered, this can provide
-// better performance but is not always intuitive behaviour.
-// use std::io::BufWriter;
+use std::env;
 
-use structopt::StructOpt;
+use pnet::datalink::Channel::Ethernet;
+use pnet::datalink::{self, NetworkInterface};
+use pnet::packet::ethernet::{EthernetPacket, MutableEthernetPacket};
+use pnet::packet::{MutablePacket, Packet};
 
-// Our CLI arguments. (help and version are automatically generated)
-// Documentation on how to use:
-// https://docs.rs/structopt/0.2.10/structopt/index.html#how-to-derivestructopt
-#[derive(StructOpt, Debug)]
-struct Cli {
-    // The pattern we want to look for.
-    pattern: String,
-    // The path of the file we want to look at.
-    path: String,
-}
-
+// Invoke as echo <interface name>
 fn main() {
-    let args = Cli::from_args();
-    let contents = fs::read_to_string(&args.path)
-        .expect("Could not read file.");
-    let mut stdout = io::stdout();
-    // (Buf) Wraps stdout in a buffer.
-    // let mut stdout = BufWriter::new(stdout);
+    let interface_name = env::args().nth(1).unwrap();
+    let interface_names_match = |iface: &NetworkInterface| iface.name == interface_name;
 
-    for (line_no, line) in contents.lines().enumerate() {
-        if line.contains(&args.pattern) {
-            writeln!(stdout, "{}: {}", line_no + 1, line).expect("TODO: panic message");
+    // Find the network interface with the provided name
+    let interfaces = datalink::interfaces();
+    let interface = interfaces
+        .into_iter()
+        .filter(interface_names_match)
+        .next()
+        .unwrap();
+
+    // Create a new channel, dealing with layer 2 packets
+    let (mut tx, mut rx) = match datalink::channel(&interface, Default::default()) {
+        Ok(Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("Unhandled channel type"),
+        Err(e) => panic!(
+            "An error occurred when creating the datalink channel: {}",
+            e
+        ),
+    };
+
+    loop {
+        match rx.next() {
+            Ok(packet) => {
+                let packet = EthernetPacket::new(packet).unwrap();
+
+                // Constructs a single packet, the same length as the one received,
+                // using the provided closure. This allows the packet to be constructed
+                // directly in the write buffer, without copying. If copying is not a
+                // problem, you could also use send_to.
+                //
+                // The packet is sent once the closure has finished executing.
+                tx.build_and_send(1, packet.packet().len(), &mut |mut new_packet| {
+                    let mut new_packet = MutableEthernetPacket::new(new_packet).unwrap();
+
+                    // Create a clone of the original packet
+                    new_packet.clone_from(&packet);
+
+                    // Switch the source and destination
+                    new_packet.set_source(packet.get_destination());
+                    new_packet.set_destination(packet.get_source());
+                });
+            }
+            Err(e) => {
+                // If an error occurs, we can handle it here
+                panic!("An error occurred while reading: {}", e);
+            }
         }
     }
 }
-
