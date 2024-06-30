@@ -5,3 +5,4 @@ authors = ["相田 優希 <51500566+aida0710@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
+pcap = "2.0.0"
