@@ -1,30 +1,18 @@
 mod send_notice_packet;
+mod app;
+mod select_network;
+mod packet_capture;
 
 use pcap::{Device, Capture};
-use std::io::{self, Write};
+use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 利用可能なネットワークインターフェースを取得
-    let devices: Vec<Device> = Device::list()?;
-    println!("利用可能なデバイス:");
-    for (i, device) in devices.iter().enumerate() {
-        println!("{}. {}", i + 1, device.name);
-    }
-
-    print!("使用するデバイスの番号を入力してください: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    let device_index: usize = input.trim().parse::<usize>()? - 1;
-    let device = devices.get(device_index).ok_or("無効なデバイス番号")?;
-
-    println!("選択されたデバイス: {}", device.name);
+    let device: Device = select_network::select_network_interface()?;
+    packet_capture::packet_capture(device.clone())?;
 
     // キャプチャを開始
-    let mut cap = Capture::from_device(device.clone())?
+    /*let mut cap = Capture::from_device(device)?
         .promisc(true)
         .snaplen(65535)
         .open()?;
@@ -52,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         }
-    }
+    }*/
 
     Ok(())
 }
