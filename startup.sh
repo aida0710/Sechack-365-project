@@ -11,8 +11,8 @@ echo "プロジェクトディレクトリに移動します..."
 cd ~/RustroverProjects/rust-cli-app
 
 # 既存のビルドファイルを削除
-echo "既存のビルドファイルを削除します..."
-cargo clean
+#echo "既存のビルドファイルを削除します..."
+#cargo clean
 
 # プロジェクトをビルド
 echo "プロジェクトをビルドします..."
