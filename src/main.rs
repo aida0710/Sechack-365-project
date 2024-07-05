@@ -3,6 +3,7 @@ mod app;
 mod select_network;
 mod packet_capture;
 mod packet_parser;
+mod port_to_protocol;
 
 use pcap::Device;
 use std::io::Write;
