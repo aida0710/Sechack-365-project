@@ -1,5 +1,5 @@
 use std::net::Ipv4Addr;
-use pcap::{Device, Capture, Active};
+use pcap::{Device, Capture};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::tcp::{MutableTcpPacket, TcpFlags};
 use pnet::packet::ipv4::MutableIpv4Packet;
@@ -51,7 +51,7 @@ pub fn send_notice_packet(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, src_port: u16, dst
     tcp_packet.set_payload(payload.as_bytes());
 
     // Send the packet
-    match cap.sendpacket(&ethernet_packet.packet()) {
+    match cap.sendpacket(ethernet_packet.packet()) {
         Ok(_) => true,
         Err(_) => false,
     }
