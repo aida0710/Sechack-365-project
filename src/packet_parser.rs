@@ -25,6 +25,13 @@ fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
     let src_ip: Ipv4Addr = Ipv4Addr::new(ip_header[12], ip_header[13], ip_header[14], ip_header[15]);
     let dst_ip: Ipv4Addr = Ipv4Addr::new(ip_header[16], ip_header[17], ip_header[18], ip_header[19]);
     let protocol: u8 = ip_header[9];
+
+    let ihl = (ip_header[0] & 0x0F) as usize * 4;
+    let tcp_header = ip_header.get(ihl..)?;
+
+    let src_port = u16::from_be_bytes([tcp_header[0], tcp_header[1]]);
+    let dst_port = u16::from_be_bytes([tcp_header[2], tcp_header[3]]);
+
     let protocol_str: String = match protocol {
         1 => parse_icmp(ip_header, false),
         6 => "v4 TCP".to_string(),
