@@ -87,7 +87,7 @@ fn parse_icmp(ip_header: &[u8], is_ipv6: bool) -> String {
     let icmp_type: u8 = if is_ipv6 {
         ip_header.get(40).copied().unwrap_or(0)
     } else {
-        let ihl: usize = (ip_header[0] & 0x0F) as usize;
+        let ihl: usize = (ip_header[0] & 0b00001111) as usize;
         ip_header.get(ihl * 4).copied().unwrap_or(0)
     };
 
