@@ -1,4 +1,5 @@
 use pcap::{Capture, Device};
+use crate::packet_parser;
 
 pub fn packet_capture(capture_device: Device) -> Result<(), Box<dyn std::error::Error>> {
     let mut cap = Capture::from_device(capture_device)?
@@ -12,26 +13,31 @@ pub fn packet_capture(capture_device: Device) -> Result<(), Box<dyn std::error::
     println!("パケットキャプチャを開始します...");
     let mut count = 0;
 
+    // パケットをキャプチャして表示
     loop {
         match cap.next_packet() {
             Ok(packet) => {
-                println!("パケット #{}: {:?}", count, packet);
                 save_file.write(&packet);
-                
-                if count >= 100 {
-                    break;
+
+                if let Some((src_ip, dst_ip, protocol)) = packet_parser::parse_packet(&packet.data) {
+                    println!("#{count} {src} > {dst} {proto}", count = count, src = src_ip, dst = dst_ip, proto = protocol);
                 }
+                if count >= 5000 {
+                    println!("5000個のパケットをキャプチャしました。終了します。");
+                    break;
+                };
                 count += 1;
-            },
+            }
             Err(pcap::Error::TimeoutExpired) => continue,
-            Err(err) => {
-                println!("Error: {:?}", err);
+            Err(e) => {
+                eprintln!("パケットの取得中にエラーが発生しました: {}", e);
                 break;
             }
         }
     }
 
     save_file.flush()?;
+    println!("キャプチャ内容をファイルに保存しました。");
 
     Ok(())
 }
