@@ -11,7 +11,7 @@ pub fn parse_packet(packet: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
     let version = ip_header[0] >> 4;
     match version {
         4 => parse_ipv4(ip_header),
-        6 => parse_ipv6(ip_header),
+        //6 => parse_ipv6(ip_header),
         _ => None,
     }
 }
