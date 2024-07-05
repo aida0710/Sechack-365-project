@@ -5,7 +5,7 @@ pub fn parse_packet(packet: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
     let ip_header = packet.get(14..)?;
 
     // パケットの内容を表示
-    println!("{:02X?}", ip_header);
+    //println!("{:02X?}", ip_header);
 
     // IPバージョンをチェック
     let version = ip_header[0] >> 4;
@@ -31,7 +31,12 @@ fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
         17 => "v4 UDP".to_string(),
         _ => format!("Unknown({})", protocol),
     };
-    Some((IpAddr::V4(src_ip), IpAddr::V4(dst_ip), protocol_str))
+
+    if protocol == 1 {  // ICMPv4
+        Some((IpAddr::V4(src_ip), IpAddr::V4(dst_ip), protocol_str))
+    } else {
+        None
+    }
 }
 
 fn parse_ipv6(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
@@ -67,7 +72,12 @@ fn parse_ipv6(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
         17 => "v6 UDP".to_string(),
         _ => format!("Unknown({})", protocol),
     };
-    Some((IpAddr::V6(src_ip), IpAddr::V6(dst_ip), protocol_str))
+
+    if protocol == 58 {  // ICMPv6
+        Some((IpAddr::V6(src_ip), IpAddr::V6(dst_ip), protocol_str))
+    } else {
+        None
+    }
 }
 
 fn parse_icmp(ip_header: &[u8], is_ipv6: bool) -> String {
