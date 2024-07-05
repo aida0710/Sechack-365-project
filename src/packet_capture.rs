@@ -1,5 +1,6 @@
 use pcap::{Capture, Device};
-use crate::packet_parser;
+use crate::port_to_protocol;
+use crate::packet_parser::parse_packet;
 
 pub fn packet_capture(capture_device: Device) -> Result<(), Box<dyn std::error::Error>> {
     let mut cap = Capture::from_device(capture_device)?
@@ -19,8 +20,10 @@ pub fn packet_capture(capture_device: Device) -> Result<(), Box<dyn std::error::
             Ok(packet) => {
                 save_file.write(&packet);
 
-                if let Some((src_ip, dst_ip, protocol)) = packet_parser::parse_packet(&packet.data) {
-                    println!("#{count} {src} > {dst} {proto}", count = count, src = src_ip, dst = dst_ip, proto = protocol);
+                if let Some((src_ip, dst_ip, protocol, src_port, dst_port)) = parse_packet(&packet.data) {
+                    let src_protocol = port_to_protocol::guess_protocol(src_port);
+                    let dst_protocol =  port_to_protocol::guess_protocol(dst_port);
+                    println!("#{count} {src_ip}:{src_port}({src_protocol}) > {dst_ip}:{dst_port}({dst_protocol}) {protocol}");
                 }
                 if count >= 5000 {
                     println!("5000個のパケットをキャプチャしました。終了します。");
