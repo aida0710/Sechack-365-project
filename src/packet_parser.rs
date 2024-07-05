@@ -76,11 +76,7 @@ fn parse_ipv6(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
         _ => format!("Unknown({})", protocol),
     };
 
-    if protocol == 58 {  // ICMPv6
-        Some((IpAddr::V6(src_ip), IpAddr::V6(dst_ip), protocol_str))
-    } else {
-        None
-    }
+    Some((IpAddr::V6(src_ip), IpAddr::V6(dst_ip), protocol_str))
 }
 
 fn parse_icmp(ip_header: &[u8], is_ipv6: bool) -> String {
