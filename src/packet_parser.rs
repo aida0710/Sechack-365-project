@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-pub fn parse_packet(packet: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
+pub fn parse_packet(packet: &[u8]) -> Option<(IpAddr, IpAddr, String, u16, u16)> {
     // イーサネットヘッダーをスキップ (通常14バイト)
     let ip_header = packet.get(14..)?;
 
@@ -16,7 +16,7 @@ pub fn parse_packet(packet: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
     }
 }
 
-fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
+fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String, u16, u16)> {
     if ip_header.len() < 20 {
         eprintln!("破損したIPv4パケットが検出されました。");
         return None;
@@ -39,11 +39,7 @@ fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
         _ => format!("Unknown({})", protocol),
     };
 
-    if protocol == 1 {  // ICMPv4
-        Some((IpAddr::V4(src_ip), IpAddr::V4(dst_ip), protocol_str))
-    } else {
-        None
-    }
+    Some((IpAddr::V4(src_ip), IpAddr::V4(dst_ip), protocol_str, src_port, dst_port))
 }
 
 fn parse_ipv6(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
