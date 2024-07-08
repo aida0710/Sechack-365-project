@@ -7,6 +7,7 @@ use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket};
 use pnet::datalink::MacAddr;
 use pnet::packet::{MutablePacket, Packet};
 
+#[allow(dead_code)]
 pub fn send_notice_packet(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, src_port: u16, dst_port: u16, payload: String) -> bool {
     // Find the default network interface
     let interface = Device::lookup().unwrap().unwrap();

@@ -1,46 +1,70 @@
-use pcap::{Capture, Device};
-use crate::port_to_protocol;
+use pcap::Capture;
 use crate::packet_parser::parse_packet;
+use crate::app::App;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-pub fn packet_capture(capture_device: Device) -> Result<(), Box<dyn std::error::Error>> {
-    let mut cap = Capture::from_device(capture_device)?
-        .promisc(true) // プロミスキャスモードを有効にする(自分宛以外のパケットもキャプチャする)
-        .snaplen(65535) // キャプチャするパケットの最大サイズを指定(65535バイトはEthernetフレームの最大サイズなので、実質無制限)
-        .buffer_size(5 * 1024 * 1024) // バッファサイズを5MBに指定
-        .immediate_mode(true) // キャプチャを開始するとすぐにパケットを取得する
-        .open()?;
+pub fn start_packet_capture(app: Arc<Mutex<App>>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut current_device: Option<String> = None;
 
-    let mut save_file = cap.savefile("capture.pcap")?;
-    println!("パケットキャプチャを開始します...");
-    let mut count = 0;
-
-    // パケットをキャプチャして表示
     loop {
-        match cap.next_packet() {
-            Ok(packet) => {
-                save_file.write(&packet);
+        thread::sleep(Duration::from_millis(100));
+        let (device, is_capturing, device_changed) = {
+            let mut app = app.lock().unwrap();
+            let device = app.selected_device.clone();
+            let is_capturing = app.is_capturing;
+            let device_changed = app.device_changed;
+            app.device_changed = false;
+            (device, is_capturing, device_changed)
+        };
 
-                if let Some((src_ip, dst_ip, protocol, src_port, dst_port)) = parse_packet(&packet.data) {
-                    let src_protocol = port_to_protocol::guess_protocol(src_port);
-                    let dst_protocol =  port_to_protocol::guess_protocol(dst_port);
-                    println!("#{count} {src_ip}:{src_port}({src_protocol}) > {dst_ip}:{dst_port}({dst_protocol}) {protocol}");
+        if !is_capturing {
+            current_device = None;
+            continue;
+        }
+
+        if let Some(device) = device {
+            if current_device.as_ref() != Some(&device.name) || device_changed {
+                current_device = Some(device.name.clone());
+
+                let mut cap = Capture::from_device(device.clone())?
+                    .promisc(true)
+                    .snaplen(65535)
+                    .timeout(100)
+                    .buffer_size(2 * 1024 * 1024)
+                    .immediate_mode(true)
+                    .open()?;
+
+                loop {
+                    let (is_capturing, device_name) = {
+                        let app = app.lock().unwrap();
+                        (app.is_capturing, app.selected_device.as_ref().map(|d| d.name.clone()))
+                    };
+
+                    if !is_capturing || device_name.as_ref() != Some(&device.name) {
+                        break;
+                    }
+
+                    match cap.next_packet() {
+                        Ok(packet) => {
+                            if let Some((src_ip, dst_ip, protocol, src_port, dst_port)) = parse_packet(&packet.data) {
+                                let packet_info = format!("{}:{} > {}:{} {}",
+                                                          src_ip, src_port, dst_ip, dst_port, protocol);
+                                let mut app = app.lock().unwrap();
+                                app.add_captured_packet(packet_info);
+                            }
+                        }
+                        Err(pcap::Error::TimeoutExpired) => {
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("Error capturing packet: {}", e);
+                            break;
+                        }
+                    }
                 }
-                if count >= 5000 {
-                    println!("5000個のパケットをキャプチャしました。終了します。");
-                    break;
-                };
-                count += 1;
-            }
-            Err(pcap::Error::TimeoutExpired) => continue,
-            Err(e) => {
-                eprintln!("パケットの取得中にエラーが発生しました: {}", e);
-                break;
             }
         }
     }
-
-    save_file.flush()?;
-    println!("キャプチャ内容をファイルに保存しました。");
-
-    Ok(())
 }

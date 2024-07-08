@@ -42,6 +42,7 @@ fn parse_ipv4(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String, u16, u16)> {
     Some((IpAddr::V4(src_ip), IpAddr::V4(dst_ip), protocol_str, src_port, dst_port))
 }
 
+#[allow(dead_code)]
 fn parse_ipv6(ip_header: &[u8]) -> Option<(IpAddr, IpAddr, String)> {
     if ip_header.len() < 40 {
         eprintln!("破損したIPv6パケットが検出されました。");

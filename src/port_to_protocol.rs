@@ -21,6 +21,7 @@ fn create_port_protocol_map() -> HashMap<u16, &'static str> {
 }
 
 // ポート番号からプロトコルを推定する関数
+#[allow(dead_code)]
 pub fn guess_protocol(port: u16) -> String {
     let port_map = create_port_protocol_map();
     port_map.get(&port)
