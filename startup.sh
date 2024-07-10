@@ -11,15 +11,22 @@ echo "プロジェクトディレクトリに移動します..."
 cd ~/RustroverProjects/rust-cli-app
 
 # 既存のビルドファイルを削除
-echo "既存のビルドファイルを削除します..."
-cargo clean
+#echo "既存のビルドファイルを削除します..."
+#cargo clean
 
 # プロジェクトをビルド
 echo "プロジェクトをビルドします..."
 cargo build --release
 
-# 実行ファイルに権限を付与
-sudo setcap cap_net_raw,cap_net_admin=eip target/release/cli-app
+# ビルドが成功した場合のみ、以下を実行
+# shellcheck disable=SC2181
+if [ $? -eq 0 ]; then
+    # 実行ファイルに権限を付与
+    echo "実行ファイルに権限を付与します..."
+    sudo setcap cap_net_raw,cap_net_admin=eip target/release/cli-app
 
-echo "アプリケーションを実行します..."
-sudo ./target/release/cli-app
+    echo "アプリケーションを実行します..."
+    sudo ./target/release/cli-app
+else
+    echo "ビルドに失敗しました。エラーを確認してください。"
+fi
