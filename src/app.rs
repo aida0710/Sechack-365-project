@@ -1,6 +1,6 @@
-use pcap::Device;
 use std::collections::VecDeque;
-use crate::select_network;
+use pcap::Device;
+use crate::network;
 
 pub enum CurrentScreen {
     Main,
@@ -18,11 +18,12 @@ pub struct App {
     pub packet_count: usize,
     pub message: Option<String>,
     pub device_changed: bool,
+    pub exit_selected_button: usize, // 0: Yes, 1: No
 }
 
 impl App {
     pub fn new() -> Self {
-        App {
+        Self {
             current_screen: CurrentScreen::Main,
             selected_device: None,
             captured_packets: VecDeque::with_capacity(1000),
@@ -32,15 +33,19 @@ impl App {
             packet_count: 0,
             message: None,
             device_changed: false,
+            exit_selected_button: 0,
         }
     }
 
-    pub fn start_capture(&mut self) {
-        self.is_capturing = true;
-    }
-
-    pub fn stop_capture(&mut self) {
-        self.is_capturing = false;
+    pub fn toggle_capture(&mut self) -> bool {
+        if self.selected_device.is_some() {
+            self.message = None;
+            self.is_capturing = !self.is_capturing;
+            true
+        } else {
+            self.set_message("ネットワークデバイスを選択してからCaptureを開始してください。");
+            false
+        }
     }
 
     pub fn add_captured_packet(&mut self, packet_info: String) {
@@ -59,45 +64,23 @@ impl App {
 
     pub fn previous_device(&mut self) {
         if !self.available_devices.is_empty() {
-            if self.selected_device_index > 0 {
-                self.selected_device_index -= 1;
-            } else {
-                self.selected_device_index = self.available_devices.len() - 1;
-            }
+            self.selected_device_index = self.selected_device_index.checked_sub(1)
+                .unwrap_or(self.available_devices.len() - 1);
         }
     }
 
     pub fn select_current_device(&mut self) {
-        if !self.available_devices.is_empty() {
-            let new_device = self.available_devices[self.selected_device_index].clone();
+        if let Some(new_device) = self.available_devices.get(self.selected_device_index).cloned() {
             if self.selected_device.as_ref().map(|d| d.name != new_device.name).unwrap_or(true) {
                 self.selected_device = Some(new_device);
                 self.set_message(&format!("デバイス {} を選択しました", self.selected_device.as_ref().unwrap().name));
 
-                // キャプチャが実行中だった場合、新しいデバイスでキャプチャを再開
                 if self.is_capturing {
-                    self.stop_capture();
-                    self.start_capture();
+                    self.is_capturing = false;
                 }
 
-                // デバイス変更フラグをセット
                 self.device_changed = true;
             }
-        }
-    }
-
-    pub fn toggle_capture(&mut self) -> bool {
-        if self.selected_device.is_some() {
-            self.message = None;
-            if self.is_capturing {
-                self.stop_capture();
-            } else {
-                self.start_capture();
-            }
-            true
-        } else {
-            self.set_message("ネットワークデバイスを選択してからCaptureを開始してください。");
-            false
         }
     }
 
@@ -110,7 +93,7 @@ impl App {
         self.packet_count = 0;
         self.message = None;
 
-        match select_network::get_available_devices() {
+        match network::get_available_devices() {
             Ok(devices) => self.available_devices = devices,
             Err(_) => {
                 self.available_devices.clear();

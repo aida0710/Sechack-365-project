@@ -1,15 +1,13 @@
-mod send_notice_packet;
 mod app;
-mod select_network;
-mod packet_capture;
-mod packet_parser;
-mod port_to_protocol;
 mod ui;
+mod network;
+mod packet;
+mod error;
+mod protocol_utils;
 
-use app::{App, CurrentScreen};
 use std::io;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::Mutex;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use crossterm::{
@@ -17,8 +15,12 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use crate::app::{App, CurrentScreen};
+use crate::network::get_available_devices;
+use crate::packet::start_packet_capture;
+use crate::error::Result;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -30,70 +32,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Arc::new(Mutex::new(App::new()));
     {
         let mut app_lock = app.lock().unwrap();
-        app_lock.available_devices = select_network::get_available_devices()?;
+        app_lock.available_devices = get_available_devices()?;
     }
 
     let app_clone = Arc::clone(&app);
     std::thread::spawn(move || {
-        packet_capture::start_packet_capture(app_clone).unwrap();
+        if let Err(e) = start_packet_capture(app_clone) {
+            eprintln!("Packet capture error: {}", e);
+        }
     });
 
-    // Main loop
+    // Main event loop
     loop {
         {
             let app_lock = app.lock().unwrap();
             terminal.draw(|f| ui::draw(f, &app_lock))?;
         }
-
-        if event::poll(Duration::from_millis(10))? {
+        if event::poll(std::time::Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 let mut app_lock = app.lock().unwrap();
                 match app_lock.current_screen {
-                    CurrentScreen::Main => {
-                        match key.code {
-                            KeyCode::Char('q') => {
-                                app_lock.current_screen = CurrentScreen::Exiting;
-                            }
-                            KeyCode::Char('s') => {
-                                app_lock.current_screen = CurrentScreen::SelectNetwork;
-                            }
-                            KeyCode::Char('c') => {
-                                app_lock.toggle_capture();
-                            },
-                            KeyCode::Char('r') => {
-                                app_lock.reset();
-                                // キャプチャスレッドを再起動
-                                let app_clone = Arc::clone(&app);
-                                std::thread::spawn(move || {
-                                    packet_capture::start_packet_capture(app_clone).unwrap();
-                                });
-                            },
-                            _ => {}
-                        }
-                    }
-                    CurrentScreen::SelectNetwork => {
-                        match key.code {
-                            KeyCode::Up => app_lock.previous_device(),
-                            KeyCode::Down => app_lock.next_device(),
-                            KeyCode::Enter => {
-                                app_lock.select_current_device();
-                                app_lock.current_screen = CurrentScreen::Main;
-                                if app_lock.device_changed {
-                                    let app_clone = Arc::clone(&app);
-                                    std::thread::spawn(move || {
-                                        packet_capture::start_packet_capture(app_clone).unwrap();
-                                    });
-                                }
-                            }
-                            KeyCode::Esc => {
-                                app_lock.current_screen = CurrentScreen::Main;
-                            }
-                            _ => {}
-                        }
-                    }
+                    CurrentScreen::Main => handle_main_screen_input(&mut app_lock, key),
+                    CurrentScreen::SelectNetwork => handle_select_network_input(&mut app_lock, key),
                     CurrentScreen::Exiting => {
-                        break;
-                    }
+                        if handle_exit_screen_input(&mut app_lock, key) {
+                            break; // アプリケーションを終了
+                        }
+                    },
                 }
             }
         }
@@ -109,4 +74,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+fn handle_main_screen_input(app: &mut App, key: event::KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') => {
+            app.current_screen = CurrentScreen::Exiting;
+            app.exit_selected_button = 0; // デフォルトで"はい"を選択
+        },
+        KeyCode::Char('s') => app.current_screen = CurrentScreen::SelectNetwork,
+        KeyCode::Char('c') => { app.toggle_capture(); },
+        KeyCode::Char('r') => app.reset(),
+        _ => {}
+    }
+}
+
+fn handle_select_network_input(app: &mut App, key: event::KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.previous_device(),
+        KeyCode::Down => app.next_device(),
+        KeyCode::Enter => {
+            app.select_current_device();
+            app.current_screen = CurrentScreen::Main;
+        }
+        KeyCode::Esc => app.current_screen = CurrentScreen::Main,
+        _ => {}
+    }
+}
+
+
+fn handle_exit_screen_input(app: &mut App, key: event::KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Left | KeyCode::Right => {
+            app.exit_selected_button = 1 - app.exit_selected_button; // 0と1を切り替え
+        }
+        KeyCode::Enter => {
+            if app.exit_selected_button == 0 {
+                return true; // "はい"が選択された場合、終了
+            } else {
+                app.current_screen = CurrentScreen::Main; // "いいえ"が選択された場合、メイン画面に戻る
+            }
+        }
+        KeyCode::Esc => {
+            app.current_screen = CurrentScreen::Main; // Escキーでメイン画面に戻る
+        }
+        _ => {}
+    }
+    false
 }
