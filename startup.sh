@@ -8,7 +8,7 @@ rustup default stable
 echo "プロジェクトディレクトリに移動します..."
 
 # shellcheck disable=SC2164
-cd ~/RustroverProjects/rust-cli-app
+cd ~/RustroverProjects/nids-for-rust
 
 # 既存のビルドファイルを削除
 #echo "既存のビルドファイルを削除します..."
@@ -23,10 +23,10 @@ cargo build --release
 if [ $? -eq 0 ]; then
     # 実行ファイルに権限を付与
     echo "実行ファイルに権限を付与します..."
-    sudo setcap cap_net_raw,cap_net_admin=eip target/release/cli-app
+    sudo setcap cap_net_raw,cap_net_admin=eip target/release/nids-for-rust
 
     echo "アプリケーションを実行します..."
-    sudo ./target/release/cli-app
+    sudo ./target/release/nids-for-rust
 else
     echo "ビルドに失敗しました。エラーを確認してください。"
 fi
