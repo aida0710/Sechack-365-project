@@ -102,7 +102,6 @@ fn handle_select_network_input(app: &mut App, key: event::KeyEvent) {
     }
 }
 
-
 fn handle_exit_screen_input(app: &mut App, key: event::KeyEvent) -> bool {
     match key.code {
         KeyCode::Left | KeyCode::Right => {
@@ -112,11 +111,11 @@ fn handle_exit_screen_input(app: &mut App, key: event::KeyEvent) -> bool {
             if app.exit_selected_button == 0 {
                 return true; // "はい"が選択された場合、終了
             } else {
-                app.current_screen = CurrentScreen::Main; // "いいえ"が選択された場合、メイン画面に戻る
+                app.current_screen = CurrentScreen::Main;
             }
         }
         KeyCode::Esc => {
-            app.current_screen = CurrentScreen::Main; // Escキーでメイン画面に戻る
+            app.current_screen = CurrentScreen::Main;
         }
         _ => {}
     }

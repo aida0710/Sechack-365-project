@@ -109,12 +109,12 @@ fn parse_ipv4(ip_header: &[u8]) -> Option<String> {
 }
 
 fn parse_ipv6(ip_header: &[u8]) -> Option<String> {
-    if ip_header.len() < 40 {
+    if ip_header.len() < 40 {// ipv6のヘッダー長は固定で40バイト
         return None;
     }
 
     let src_ip = Ipv6Addr::new(
-        u16::from_be_bytes([ip_header[8], ip_header[9]]),
+        u16::from_be_bytes([ip_header[8], ip_header[9]]), //2バイト(16bit)ずつ読み込む
         u16::from_be_bytes([ip_header[10], ip_header[11]]),
         u16::from_be_bytes([ip_header[12], ip_header[13]]),
         u16::from_be_bytes([ip_header[14], ip_header[15]]),
@@ -135,7 +135,7 @@ fn parse_ipv6(ip_header: &[u8]) -> Option<String> {
     );
     let next_header: u8 = ip_header[6];
 
-    let tcp_header = ip_header.get(40..)?;
+    let tcp_header = ip_header.get(40..)?; // ipv6のヘッダー長は固定で40バイト
 
     let src_port = u16::from_be_bytes([tcp_header[0], tcp_header[1]]);
     let dst_port = u16::from_be_bytes([tcp_header[2], tcp_header[3]]);
