@@ -1,21 +1,52 @@
-use pcap::Device;
+use pcap::{Capture, Device};
+use std::io::{self, Write};
+use std::time::{Duration, UNIX_EPOCH};
 
-fn main() {
-    let device_list = Device::list();
-    match device_list {
-        Ok(devices) => {
-            for device in devices {
-                println!("Device name: {}", device.name);
-                println!(
-                    "Device description: {}",
-                    device.desc.unwrap_or("No description".to_string())
-                );
-                println!("Device addresses: {:?}", device.addresses);
-                println!();
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-        }
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let device_list = Device::list()?;
+
+    println!("利用可能なデバイス:");
+    for (index, device) in device_list.iter().enumerate() {
+        println!("{}. {}", index + 1, device.name);
+        println!("   説明: {}", device.desc.as_deref().unwrap_or("説明なし"));
+        println!("   アドレス: {:?}", device.addresses);
+        println!();
     }
+
+    print!("キャプチャするデバイスの番号を入力してください: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let device_index: usize = input.trim().parse()?;
+
+    if device_index == 0 || device_index > device_list.len() {
+        return Err("無効なデバイス番号です".into());
+    }
+
+    let selected_device = &device_list[device_index - 1];
+    println!("選択されたデバイス: {}", selected_device.name);
+
+    let mut cap = Capture::from_device(selected_device.clone())?
+        .promisc(true)
+        .snaplen(65535)
+        .timeout(0)
+        .immediate_mode(true)
+        .buffer_size(3 * 1024 * 1024)
+        .open()?;
+
+    println!("パケットのキャプチャを開始します。Ctrl+Cで終了します。");
+
+    while let Ok(packet) = cap.next_packet() {
+        println!("パケット長: {} バイト", packet.header.len);
+
+        // タイムスタンプを SystemTime に変換
+        let timestamp = UNIX_EPOCH + Duration::new(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u32 * 1000);
+        println!("キャプチャ時刻: {:?}", timestamp);
+
+        println!("パケットデータ (最初の16バイト): {:?}", &packet.data[..16.min(packet.data.len())]);
+        println!();
+    }
+
+    Ok(())
 }
