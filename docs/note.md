@@ -9,4 +9,3 @@ Protocol Layering
     +---------------------+
     |communication network|
     +---------------------+
-
