@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# コンソールログを消去
-clear
-
 # Rustのデフォルトツールチェーンを設定
 echo "Rustのデフォルトツールチェーンを安定版に設定します..."
 rustup default stable
