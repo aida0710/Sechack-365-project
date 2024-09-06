@@ -64,8 +64,11 @@ fn process_tcp_data(ip_header: &IpHeader, tcp_header: &crate::tcp_header::TcpHea
     } else {
         if tcp_header.flags & TCP_SYN != 0 {
             let mut new_stream = TcpStream::new(tcp_header.seq_num, 0);
-            if let Some(mss) = parse_tcp_options(&payload[..tcp_header.data_offset as usize * 4 - 20]) {
-                new_stream.set_mss(true, mss);
+            let options_end = (tcp_header.data_offset as usize * 4).saturating_sub(20);
+            if payload.len() >= options_end {
+                if let Some(mss) = parse_tcp_options(&payload[..options_end]) {
+                    new_stream.set_mss(true, mss);
+                }
             }
             streams.insert(stream_key, new_stream);
         }
@@ -76,8 +79,11 @@ fn process_tcp_data(ip_header: &IpHeader, tcp_header: &crate::tcp_header::TcpHea
 
     if let Some(stream) = streams.get_mut(&stream_key) {
         if tcp_header.flags & TCP_SYN != 0 && !is_from_client {
-            if let Some(mss) = parse_tcp_options(&payload[..tcp_header.data_offset as usize * 4 - 20]) {
-                stream.set_mss(false, mss);
+            let options_end = (tcp_header.data_offset as usize * 4).saturating_sub(20);
+            if payload.len() >= options_end {
+                if let Some(mss) = parse_tcp_options(&payload[..options_end]) {
+                    stream.set_mss(false, mss);
+                }
             }
         }
 
@@ -89,6 +95,8 @@ fn process_tcp_data(ip_header: &IpHeader, tcp_header: &crate::tcp_header::TcpHea
             payload,
             tcp_header.window,
         );
+
+        println!("Payload length: {}, TCP header data offset: {}", payload.len(), tcp_header.data_offset);
 
         println!("Stream: {:?} -> {:?}", stream_key.0, stream_key.2);
         println!("State: {:?}", stream.state);
