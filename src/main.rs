@@ -8,10 +8,12 @@ mod tcp_stream;
 mod ip_header;
 mod tcp_header;
 mod packet_processor;
+mod ip_reassembly;
 
 use tcp_stream::TcpStreamKey;
 use tcp_stream::TcpStream;
 use packet_processor::process_packet;
+use ip_reassembly::IpReassembler;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device_list = Device::list()?;
@@ -49,9 +51,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("パケットのキャプチャを開始します。Ctrl+Cで終了します。");
 
     let mut streams: HashMap<TcpStreamKey, TcpStream> = HashMap::new();
+    let mut ip_reassembler = IpReassembler::new(Duration::from_secs(30));
 
     while let Ok(packet) = cap.next_packet() {
-        process_packet(&packet, &mut streams);
+        process_packet(&packet, &mut streams, &mut ip_reassembler);
 
         // 古いストリームの削除
         streams.retain(|_, stream| {
