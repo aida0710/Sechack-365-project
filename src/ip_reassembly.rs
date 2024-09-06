@@ -85,8 +85,10 @@ impl IpReassembler {
     }
 
     pub fn cleanup(&mut self) {
+        let now = Instant::now();
+        let timeout = self.timeout;
         self.buffers.retain(|_, buffer| {
-            buffer.last_activity.elapsed() < self.timeout
+            now.duration_since(buffer.last_activity) < timeout
         });
     }
 }
