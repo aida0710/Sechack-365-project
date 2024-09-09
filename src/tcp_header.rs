@@ -65,9 +65,9 @@ pub fn parse_tcp_options(data: &[u8]) -> Option<u16> {
             1 => i += 1, // NOP
             2 if data.len() >= i + 4 => {
                 // MSS option
-                return Some(u16::from_be_bytes([data[i+2], data[i+3]]));
+                return Some(u16::from_be_bytes([data[i + 2], data[i + 3]]));
             }
-            _ if data.len() > i + 1 => i += data[i+1] as usize,
+            _ if data.len() > i + 1 => i += data[i + 1] as usize,
             _ => break,
         }
     }
