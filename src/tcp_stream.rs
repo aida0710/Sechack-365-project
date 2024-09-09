@@ -1,5 +1,5 @@
 use std::net::Ipv4Addr;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant, SystemTime};
 
 // TCPフラグの定義
 pub const TCP_FIN: u8 = 0x01;
@@ -42,6 +42,9 @@ pub struct TcpStream {
     pub server_window: u16,
     pub client_mss: u16,
     pub server_mss: u16,
+    pub client_cwnd: u32,  // クライアントの輻輳ウィンドウ
+    pub server_cwnd: u32,  // サーバーの輻輳ウィンドウ
+    pub arrival_time: SystemTime,  // 最後のパケット到着時間
 }
 
 pub type TcpStreamKey = (Ipv4Addr, u16, Ipv4Addr, u16);
@@ -61,11 +64,15 @@ impl TcpStream {
             server_window: 0,
             client_mss: 1460,  // デフォルト値
             server_mss: 1460,  // デフォルト値
+            client_cwnd: 1,
+            server_cwnd: 1,
+            arrival_time: SystemTime::now(),
         }
     }
 
     pub fn update(&mut self, is_from_client: bool, seq: u32, ack: u32, flags: u8, data: &[u8], window: u16) {
         self.last_activity = Instant::now();
+        self.arrival_time = SystemTime::now();
 
         if is_from_client {
             if seq == self.client_next_seq {
@@ -76,6 +83,7 @@ impl TcpStream {
                 self.server_next_seq = ack;
             }
             self.client_window = window;
+            self.client_cwnd += 1;  // 簡略化した輻輳制御
         } else {
             if seq == self.server_next_seq {
                 self.server_data.extend_from_slice(data);
@@ -85,6 +93,7 @@ impl TcpStream {
                 self.client_next_seq = ack;
             }
             self.server_window = window;
+            self.server_cwnd += 1;  // 簡略化した輻輳制御
         }
 
         // 状態遷移の処理
