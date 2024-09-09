@@ -1,5 +1,5 @@
-use std::io::{self, Write};
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::time::Duration;
 
 use pcap::{Capture, Device};
@@ -9,11 +9,12 @@ mod ip_header;
 mod tcp_header;
 mod packet_processor;
 mod ip_reassembly;
+mod protocol_identifier;
 
-use tcp_stream::TcpStreamKey;
-use tcp_stream::TcpStream;
-use packet_processor::process_packet;
 use ip_reassembly::IpReassembler;
+use packet_processor::process_packet;
+use tcp_stream::TcpStream;
+use tcp_stream::TcpStreamKey;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let device_list = Device::list()?;
