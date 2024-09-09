@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::time::Duration;
 
 use pcap::{Capture, Device};
@@ -10,13 +11,17 @@ mod tcp_header;
 mod packet_processor;
 mod ip_reassembly;
 mod protocol_identifier;
+mod async_log_inserter;
 
 use ip_reassembly::IpReassembler;
 use packet_processor::process_packet;
 use tcp_stream::TcpStream;
 use tcp_stream::TcpStreamKey;
+use crate::async_log_inserter::AsyncLogInserter;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let inserter = Arc::new(AsyncLogInserter::new("mysql://user:password@localhost:3306/packet_log_db").await?);
     let device_list = Device::list()?;
 
     println!("利用可能なデバイス:");
@@ -55,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ip_reassembler = IpReassembler::new(Duration::from_secs(30));
 
     while let Ok(packet) = cap.next_packet() {
-        process_packet(&packet, &mut streams, &mut ip_reassembler);
+        process_packet(&packet, &mut streams, &mut ip_reassembler, Arc::clone(&inserter)).await?;
 
         // 古いストリームの削除
         streams.retain(|_, stream| {
