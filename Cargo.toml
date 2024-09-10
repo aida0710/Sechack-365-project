@@ -10,4 +10,5 @@ pnet = { version = "0.35.0" }
 mysql_async = { version = "0.34.2", default-features = false }
 tokio = { version = "1.40.0", features = ["full"] }
 chrono = { version = "0.4.38" }
+flate2 = { version = "1.0.33" }
 dotenv = { version = "0.15.0" }

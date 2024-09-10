@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub async fn process_packet(
-    packet: &pcap::Packet,
+pub async fn process_packet<'a>(
+    packet: &'a pcap::Packet<'a>,
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     ip_reassembler: &mut IpReassembler,
     inserter: Arc<AsyncLogInserter>,
@@ -36,7 +36,7 @@ pub async fn process_packet(
                 arrival_time,
                 inserter.clone(),
             )
-            .await?;
+                .await?;
         } else {
             // フラグメントされていないパケットまたは再構築が完了していないパケットの処理
             process_tcp_packet(&ip_header, payload, streams, arrival_time, inserter.clone())
@@ -44,7 +44,7 @@ pub async fn process_packet(
         }
     }
 
-    // 定期的にクリーンアップを行う（例：100パケットごと）
+    // 定期的にクリーンアップを行う
     if packet.header.len % 100 == 0 {
         ip_reassembler.cleanup();
     }
@@ -74,7 +74,7 @@ async fn process_reassembled_packet(
             arrival_time,
             inserter,
         )
-        .await?;
+            .await?;
     }
 
     Ok(())
@@ -102,7 +102,7 @@ async fn process_tcp_packet(
             arrival_time,
             inserter,
         )
-        .await?;
+            .await?;
     }
 
     Ok(())
@@ -116,6 +116,15 @@ async fn process_tcp_data(
     arrival_time: SystemTime,
     inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    const NON_ENCRYPTED_PORTS: [u16; 6] = [
+        80,   // HTTP
+        21,   // FTP
+        23,   // Telnet
+        25,   // SMTP
+        110,  // POP3
+        143,  // IMAP
+    ];
+
     let stream_key = (
         ip_header.src_ip,
         tcp_header.src_port,
@@ -152,6 +161,9 @@ async fn process_tcp_data(
     } else {
         reverse_key
     };
+
+    let mut stream_state = None;
+    let mut stream_closed = false;
 
     // ストリームが存在する場合はデータを更新
     if let Some(stream) = streams.get_mut(&stream_key) {
@@ -198,27 +210,44 @@ async fn process_tcp_data(
         println!("Server MSS: {}", stream.server_mss);
         println!("Client CWND: {}", stream.client_cwnd);
         println!("Server CWND: {}", stream.server_cwnd);
-        // establish状態のストリームのデータを表示
-        if stream.state == crate::tcp_stream::TcpState::Established {
-            if is_from_client {
-                println!(
-                    "Client data: {:?}",
-                    String::from_utf8_lossy(&stream.client_data)
-                );
-            } else {
-                println!(
-                    "Server data: {:?}",
-                    String::from_utf8_lossy(&stream.server_data)
-                );
+        // コンソールに過度な出力を防ぐために特定プロトロルのみに限定
+        if NON_ENCRYPTED_PORTS.contains(&tcp_header.src_port) && NON_ENCRYPTED_PORTS.contains(&tcp_header.dst_port) {
+            // establish状態のストリームのデータを表示
+            if stream.state == crate::tcp_stream::TcpState::Established {
+                if is_from_client {
+                    println!(
+                        "Client data: {:?}",
+                        String::from_utf8_lossy(&stream.client_data)
+                    );
+                } else {
+                    println!(
+                        "Server data: {:?}",
+                        String::from_utf8_lossy(&stream.server_data)
+                    );
+                }
             }
         }
         println!("--------------------");
 
-        // ストリームが閉じられたら残りのパケットデータを削除
-        if stream.state == crate::tcp_stream::TcpState::Closed {
-            streams.remove(&stream_key);
-        }
+        // ストリームの状態をコピー
+        stream_state = Some(stream.state.clone());
 
+        // ストリームが閉じられたかどうかをチェック
+        stream_closed = stream.state == crate::tcp_stream::TcpState::Closed;
+    }
+
+    // ストリームが閉じられた場合、ここで削除
+    if stream_closed {
+        streams.remove(&stream_key);
+    }
+
+    // 無限ループを防ぐために特定プロトロルのみに限定
+    if !NON_ENCRYPTED_PORTS.contains(&tcp_header.src_port) && !NON_ENCRYPTED_PORTS.contains(&tcp_header.dst_port) {
+        return Ok(());  // 非暗号化プロトコルでない場合は処理をスキップ
+    }
+
+    // データベースへの挿入
+    if let Some(state) = stream_state {
         // arrival_timeをUTCに変換
         let arrival_time_utc: DateTime<Utc> = arrival_time.into();
 
@@ -268,14 +297,15 @@ async fn process_tcp_data(
                     &tcp_header.data_offset.to_string(),
                     &payload.len().to_string(),
                     &format!("{:?}", stream_key),
-                    &is_from_client.to_string(),
-                    &format!("{:?}", stream.state),
-                    &format!("{:?}", protocol),
+                    &(if is_from_client { "1" } else { "0" }),
+                    &format!("{:?}", state),
+                    &format!("{:?}", identify_protocol(tcp_header.src_port, tcp_header.dst_port, payload)),
                     &String::from_utf8_lossy(payload),
                 ],
             )
             .await?;
     }
+
 
     Ok(())
 }

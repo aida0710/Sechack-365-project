@@ -756,6 +756,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dotenv",
+ "flate2",
  "mysql_async",
  "pcap",
  "pnet",

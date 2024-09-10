@@ -1,6 +1,5 @@
 use mysql_async::*;
 use mysql_async::prelude::*;
-use tokio;
 
 pub struct AsyncLogInserter {
     pool: Pool,
