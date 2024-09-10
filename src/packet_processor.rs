@@ -4,7 +4,7 @@ use crate::ip_reassembly::IpReassembler;
 use crate::protocol_identifier::identify_protocol;
 use crate::tcp_header::{parse_tcp_header, parse_tcp_options};
 use crate::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -153,6 +153,7 @@ async fn process_tcp_data(
         reverse_key
     };
 
+    // ストリームが存在する場合はデータを更新
     if let Some(stream) = streams.get_mut(&stream_key) {
         if tcp_header.flags & TCP_SYN != 0 && !is_from_client {
             let options_end = (tcp_header.data_offset as usize * 4).saturating_sub(20);
@@ -163,6 +164,7 @@ async fn process_tcp_data(
             }
         }
 
+        // ストリームの状態を更新
         stream.update(
             is_from_client,
             tcp_header.seq_num,
@@ -217,27 +219,59 @@ async fn process_tcp_data(
             streams.remove(&stream_key);
         }
 
-        // パケットログのデータベースへの挿入
+        // arrival_timeをUTCに変換
+        let arrival_time_utc: DateTime<Utc> = arrival_time.into();
+
         inserter
             .insert(
-                "packet_logs",
+                "packet_log",
                 &[
                     "arrival_time",
                     "protocol",
+                    "ip_version",
                     "src_ip",
-                    "src_port",
                     "dst_ip",
+                    "src_port",
                     "dst_port",
+                    "ip_header_length",
+                    "total_length",
+                    "ttl",
+                    "fragment_offset",
+                    "tcp_seq_num",
+                    "tcp_ack_num",
+                    "tcp_window_size",
+                    "tcp_flags",
+                    "tcp_data_offset",
                     "payload_length",
+                    "stream_id",
+                    "is_from_client",
+                    "tcp_state",
+                    "application_protocol",
+                    "payload",
                 ],
                 &[
-                    &arrival_time_to_string(arrival_time),
-                    &format!("{:?}", protocol),
+                    &arrival_time_utc.format("%Y-%m-%d %H:%M:%S%.6f").to_string(),
+                    &"TCP".to_string(),
+                    &ip_header.version.to_string(),
                     &ip_header.src_ip.to_string(),
-                    &tcp_header.src_port.to_string(),
                     &ip_header.dst_ip.to_string(),
+                    &tcp_header.src_port.to_string(),
                     &tcp_header.dst_port.to_string(),
+                    &ip_header.ihl.to_string(),
+                    &ip_header.total_length.to_string(),
+                    &ip_header.ttl.to_string(),
+                    &ip_header.flags_fragment_offset.to_string(),
+                    &tcp_header.seq_num.to_string(),
+                    &tcp_header.ack_num.to_string(),
+                    &tcp_header.window.to_string(),
+                    &tcp_header.flags.to_string(),
+                    &tcp_header.data_offset.to_string(),
                     &payload.len().to_string(),
+                    &format!("{:?}", stream_key),
+                    &is_from_client.to_string(),
+                    &format!("{:?}", stream.state),
+                    &format!("{:?}", protocol),
+                    &String::from_utf8_lossy(payload),
                 ],
             )
             .await?;
