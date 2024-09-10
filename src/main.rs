@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use pcap::{Capture, Device};
+use dotenv::dotenv;
 
 mod tcp_stream;
 mod ip_header;
@@ -21,7 +22,23 @@ use crate::async_log_inserter::AsyncLogInserter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let inserter = Arc::new(AsyncLogInserter::new("mysql://user:password@localhost:3306/packet_log_db").await?);
+    // .envファイルを読み込む
+    dotenv().ok();
+
+    // 環境変数から接続情報を取得
+    let db_host = std::env::var("MYSQL_HOST").expect("MYSQL_HOST must be set");
+    let db_user = std::env::var("MYSQL_USER").expect("MYSQL_USER must be set");
+    let db_password = std::env::var("MYSQL_PASSWORD").expect("MYSQL_PASSWORD must be set");
+    let db_name = std::env::var("MYSQL_DATABASE").expect("MYSQL_DATABASE must be set");
+    let db_port = std::env::var("MYSQL_PORT").expect("MYSQL_PORT must be set");
+
+    // MySQL接続文字列を構築
+    let connection_string = format!(
+        "mysql://{}:{}@{}:{}/{}",
+        db_user, db_password, db_host, db_port, db_name
+    );
+
+    let inserter = Arc::new(AsyncLogInserter::new(&connection_string).await?);
     let device_list = Device::list()?;
 
     println!("利用可能なデバイス:");
