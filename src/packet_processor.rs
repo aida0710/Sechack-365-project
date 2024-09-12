@@ -8,6 +8,7 @@ use chrono::{DateTime, Local, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 pub async fn process_packet<'a>(
     packet: &'a pcap::Packet<'a>,
@@ -250,6 +251,7 @@ async fn process_tcp_data(
     if let Some(state) = stream_state {
         // arrival_timeをUTCに変換
         let arrival_time_utc: DateTime<Utc> = arrival_time.into();
+        let payload_base64 = STANDARD.encode(payload);
 
         inserter
             .insert(
@@ -300,7 +302,7 @@ async fn process_tcp_data(
                     &(if is_from_client { "1" } else { "0" }),
                     &format!("{:?}", state),
                     &format!("{:?}", identify_protocol(tcp_header.src_port, tcp_header.dst_port, payload)),
-                    &String::from_utf8_lossy(payload),
+                    &payload_base64,
                 ],
             )
             .await?;
