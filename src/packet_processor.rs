@@ -117,13 +117,26 @@ async fn process_tcp_data(
     arrival_time: SystemTime,
     inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const NON_ENCRYPTED_PORTS: [u16; 6] = [
+    const PORTS_TO_RECORDS: [u16; 19] = [
         80,   // HTTP
+        443,  // HTTPS
         21,   // FTP
+        22,   // SSH
         23,   // Telnet
         25,   // SMTP
         110,  // POP3
         143,  // IMAP
+        53,   // DNS
+        5432, // PostgreSQL
+        27017, // MongoDB
+        6379, // Redis
+        1433, // MS SQL Server
+        8080, // Alternative HTTP
+        8443, // Alternative HTTPS
+        5672, // AMQP (RabbitMQ)
+        9200, // Elasticsearch
+        161,  // SNMP
+        389,  // LDAP
     ];
 
     let stream_key = (
@@ -212,7 +225,7 @@ async fn process_tcp_data(
         println!("Client CWND: {}", stream.client_cwnd);
         println!("Server CWND: {}", stream.server_cwnd);
         // コンソールに過度な出力を防ぐために特定プロトロルのみに限定
-        if NON_ENCRYPTED_PORTS.contains(&tcp_header.src_port) && NON_ENCRYPTED_PORTS.contains(&tcp_header.dst_port) {
+        if PORTS_TO_RECORDS.contains(&tcp_header.src_port) && PORTS_TO_RECORDS.contains(&tcp_header.dst_port) {
             // establish状態のストリームのデータを表示
             if stream.state == crate::tcp_stream::TcpState::Established {
                 if is_from_client {
@@ -243,7 +256,7 @@ async fn process_tcp_data(
     }
 
     // 無限ループを防ぐために特定プロトロルのみに限定
-    if !NON_ENCRYPTED_PORTS.contains(&tcp_header.src_port) && !NON_ENCRYPTED_PORTS.contains(&tcp_header.dst_port) {
+    if !PORTS_TO_RECORDS.contains(&tcp_header.src_port) && !PORTS_TO_RECORDS.contains(&tcp_header.dst_port) {
         return Ok(());  // 非暗号化プロトコルでない場合は処理をスキップ
     }
 
