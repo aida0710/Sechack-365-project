@@ -45,7 +45,7 @@ pub async fn process_packet<'a>(
         }
     }
 
-    // 定期的にクリーンアップを行う
+    // 100パケットごとにIP再構築のキャッシュをクリーンアップ
     if packet.header.len % 100 == 0 {
         ip_reassembler.cleanup();
     }
