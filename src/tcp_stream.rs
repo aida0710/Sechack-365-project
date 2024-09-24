@@ -98,15 +98,49 @@ impl TcpStream {
 
         // 状態遷移の処理
         self.state = match (self.state.clone(), flags) {
+            // サーバーが SYN を受信し、SYN_RECEIVED 状態に遷移
             (TcpState::Listen, TCP_SYN) => TcpState::SynReceived,
-            (TcpState::SynSent, TCP_SYN | TCP_ACK) => TcpState::Established,
+
+            // クライアントが SYN-ACK を受信し、接続確立
+            (TcpState::SynSent, flags) if flags & (TCP_SYN | TCP_ACK) == (TCP_SYN | TCP_ACK) => {
+                // 実際はSYN-ACK を受信したら ACK を送信するが、傍聴しているだけなので不要
+                TcpState::Established
+            },
+
+            // サーバーが最後の ACK を受信し、接続確立
             (TcpState::SynReceived, TCP_ACK) => TcpState::Established,
+
+            // 確立された接続で、一方が接続終了を開始 (FIN 送信)
             (TcpState::Established, TCP_FIN) => TcpState::FinWait1,
-            (TcpState::FinWait1, TCP_FIN | TCP_ACK) => TcpState::FinWait2,
+
+            // FIN 送信側が ACK を受信、または同時クローズで FIN を受信
+            (TcpState::FinWait1, flags) => {
+                if flags & TCP_ACK != 0 && flags & TCP_FIN == 0 {
+                    // ACK のみを受信
+                    TcpState::FinWait2
+                } else if flags & (TCP_FIN | TCP_ACK) == (TCP_FIN | TCP_ACK) {
+                    // FIN-ACK を受信（同時クローズ）
+                    // 実際は FIN-ACK を受信したら ACK を送信するが、傍聴しているだけなので不要
+                    TcpState::TimeWait
+                } else {
+                    // その他の場合は状態を変更しない
+                    TcpState::FinWait1
+                }
+            },
+
+            // 最後の FIN に対する ACK を受信、接続終了の準備
             (TcpState::FinWait2, TCP_ACK) => TcpState::TimeWait,
+
+            // FIN 受信側のアプリケーションが接続を閉じ、FIN を送信
             (TcpState::CloseWait, TCP_FIN) => TcpState::LastAck,
+
+            // 最後の FIN に対する ACK を受信、接続完全終了
             (TcpState::LastAck, TCP_ACK) => TcpState::Closed,
+
+            // TIME_WAIT 状態で 2MSL (通常 2分) 経過後、完全にクローズ
             (TcpState::TimeWait, _) if Instant::now().duration_since(self.last_activity) > Duration::from_secs(120) => TcpState::Closed,
+
+            // 上記以外の場合は現在の状態を維持
             (state, _) => state,
         };
     }
