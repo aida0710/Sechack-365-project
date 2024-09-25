@@ -25,7 +25,7 @@ CREATE TABLE packet_log
     payload_length       INT UNSIGNED,
     stream_id            VARCHAR(100),
     is_from_client       BOOLEAN,
-    tcp_state            ENUM ('SYN_SENT', 'SYN_RECEIVED', 'ESTABLISHED', 'FIN_WAIT_1', 'FIN_WAIT_2', 'CLOSE_WAIT', 'CLOSING', 'LAST_ACK', 'TIME_WAIT', 'CLOSED'),
+    tcp_state            VARCHAR(20),
     application_protocol VARCHAR(45),
     payload              MEDIUMBLOB,
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
