@@ -4,11 +4,22 @@ use crate::ip_reassembly::IpReassembler;
 use crate::protocol_identifier::identify_protocol;
 use crate::tcp_header::{parse_tcp_header, parse_tcp_options};
 use crate::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::{DateTime, Local, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+// 監視対象のポートリスト
+const PORTS_TO_RECORD: [u16; 7] = [
+    80,   // HTTP
+    21,   // FTP
+    23,   // Telnet
+    25,   // SMTP
+    110,  // POP3
+    143,  // IMAP
+    53,   // DNS
+];
 
 pub async fn process_packet<'a>(
     packet: &'a pcap::Packet<'a>,
@@ -117,28 +128,6 @@ async fn process_tcp_data(
     arrival_time: SystemTime,
     inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const PORTS_TO_RECORDS: [u16; 19] = [
-        80,   // HTTP
-        443,  // HTTPS
-        21,   // FTP
-        22,   // SSH
-        23,   // Telnet
-        25,   // SMTP
-        110,  // POP3
-        143,  // IMAP
-        53,   // DNS
-        5432, // PostgreSQL
-        27017, // MongoDB
-        6379, // Redis
-        1433, // MS SQL Server
-        8080, // Alternative HTTP
-        8443, // Alternative HTTPS
-        5672, // AMQP (RabbitMQ)
-        9200, // Elasticsearch
-        161,  // SNMP
-        389,  // LDAP
-    ];
-
     let stream_key = (
         ip_header.src_ip,
         tcp_header.src_port,
@@ -152,11 +141,13 @@ async fn process_tcp_data(
         tcp_header.src_port,
     );
 
+    // クライアントからのパケットかどうかを判断
     let is_from_client = if streams.contains_key(&stream_key) {
         true
     } else if streams.contains_key(&reverse_key) {
         false
     } else {
+        // 新しいストリームを開始
         if tcp_header.flags & TCP_SYN != 0 {
             let mut new_stream = TcpStream::new(tcp_header.seq_num, 0);
             let options_end = (tcp_header.data_offset as usize * 4).saturating_sub(20);
@@ -170,17 +161,11 @@ async fn process_tcp_data(
         true
     };
 
-    let stream_key = if is_from_client {
-        stream_key
-    } else {
-        reverse_key
-    };
-
-    let mut stream_state = None;
-    let mut stream_closed = false;
+    let stream_key = if is_from_client { stream_key } else { reverse_key };
 
     // ストリームが存在する場合はデータを更新
     if let Some(stream) = streams.get_mut(&stream_key) {
+        // サーバーからのSYNパケットの場合、MSSを設定
         if tcp_header.flags & TCP_SYN != 0 && !is_from_client {
             let options_end = (tcp_header.data_offset as usize * 4).saturating_sub(20);
             if payload.len() >= options_end {
@@ -204,6 +189,7 @@ async fn process_tcp_data(
 
         let protocol = identify_protocol(tcp_header.src_port, tcp_header.dst_port, payload);
 
+
         println!("Arrival time: {}", arrival_time_to_string(arrival_time));
         println!("Protocol: {:?}", protocol);
         println!(
@@ -216,17 +202,19 @@ async fn process_tcp_data(
             stream_key.0, tcp_header.src_port, stream_key.2, tcp_header.dst_port
         );
         println!("State: {:?}", stream.state);
-        println!("Client data: {} bytes", stream.client_data.len());
-        println!("Server data: {} bytes", stream.server_data.len());
-        println!("Client window: {}", stream.client_window);
-        println!("Server window: {}", stream.server_window);
-        println!("Client MSS: {}", stream.client_mss);
-        println!("Server MSS: {}", stream.server_mss);
-        println!("Client CWND: {}", stream.client_cwnd);
-        println!("Server CWND: {}", stream.server_cwnd);
-        // コンソールに過度な出力を防ぐために特定プロトロルのみに限定
-        if PORTS_TO_RECORDS.contains(&tcp_header.src_port) && PORTS_TO_RECORDS.contains(&tcp_header.dst_port) {
-            // establish状態のストリームのデータを表示
+
+        // 監視対象のポートの場合のみ、詳細なログを出力
+        if PORTS_TO_RECORD.contains(&tcp_header.src_port) || PORTS_TO_RECORD.contains(&tcp_header.dst_port) {
+            println!("Client data: {} bytes", stream.client_data.len());
+            println!("Server data: {} bytes", stream.server_data.len());
+            println!("Client window: {}", stream.client_window);
+            println!("Server window: {}", stream.server_window);
+            println!("Client MSS: {}", stream.client_mss);
+            println!("Server MSS: {}", stream.server_mss);
+            println!("Client CWND: {}", stream.client_cwnd);
+            println!("Server CWND: {}", stream.server_cwnd);
+
+            // 確立された接続の場合、データの内容を表示
             if stream.state == crate::tcp_stream::TcpState::Established {
                 if is_from_client {
                     println!(
@@ -240,87 +228,73 @@ async fn process_tcp_data(
                     );
                 }
             }
+
+            // データベースへの挿入
+            let arrival_time_utc: DateTime<Utc> = arrival_time.into();
+            let payload_base64 = STANDARD.encode(payload);
+
+            inserter
+                .insert(
+                    "packet_log",
+                    &[
+                        "arrival_time",
+                        "protocol",
+                        "ip_version",
+                        "src_ip",
+                        "dst_ip",
+                        "src_port",
+                        "dst_port",
+                        "ip_header_length",
+                        "total_length",
+                        "ttl",
+                        "fragment_offset",
+                        "tcp_seq_num",
+                        "tcp_ack_num",
+                        "tcp_window_size",
+                        "tcp_flags",
+                        "tcp_data_offset",
+                        "payload_length",
+                        "stream_id",
+                        "is_from_client",
+                        "tcp_state",
+                        "application_protocol",
+                        "payload",
+                    ],
+                    &[
+                        &arrival_time_utc.format("%Y-%m-%d %H:%M:%S%.6f").to_string(),
+                        &"TCP".to_string(),
+                        &ip_header.version.to_string(),
+                        &ip_header.src_ip.to_string(),
+                        &ip_header.dst_ip.to_string(),
+                        &tcp_header.src_port.to_string(),
+                        &tcp_header.dst_port.to_string(),
+                        &ip_header.ihl.to_string(),
+                        &ip_header.total_length.to_string(),
+                        &ip_header.ttl.to_string(),
+                        &ip_header.flags_fragment_offset.to_string(),
+                        &tcp_header.seq_num.to_string(),
+                        &tcp_header.ack_num.to_string(),
+                        &tcp_header.window.to_string(),
+                        &tcp_header.flags.to_string(),
+                        &tcp_header.data_offset.to_string(),
+                        &payload.len().to_string(),
+                        &format!("{:?}", stream_key),
+                        &(if is_from_client { "1" } else { "0" }),
+                        &format!("{:?}", stream.state),
+                        &format!("{:?}", protocol),
+                        &payload_base64,
+                    ],
+                )
+                .await?;
         }
         println!("--------------------");
 
-        // ストリームの状態をコピー
-        stream_state = Some(stream.state.clone());
 
-        // ストリームが閉じられたかどうかをチェック
-        stream_closed = stream.state == crate::tcp_stream::TcpState::Closed;
+        // ストリームが閉じられた場合、ストリームを削除
+        if stream.state == crate::tcp_stream::TcpState::Closed {
+            streams.remove(&stream_key);
+        }
     }
-
-    // ストリームが閉じられた場合、ここで削除
-    if stream_closed {
-        streams.remove(&stream_key);
-    }
-
-    // 無限ループを防ぐために特定プロトロルのみに限定
-    if !PORTS_TO_RECORDS.contains(&tcp_header.src_port) && !PORTS_TO_RECORDS.contains(&tcp_header.dst_port) {
-        return Ok(());  // 非暗号化プロトコルでない場合は処理をスキップ
-    }
-
-    // データベースへの挿入
-    if let Some(state) = stream_state {
-        // arrival_timeをUTCに変換
-        let arrival_time_utc: DateTime<Utc> = arrival_time.into();
-        let payload_base64 = STANDARD.encode(payload);
-
-        inserter
-            .insert(
-                "packet_log",
-                &[
-                    "arrival_time",
-                    "protocol",
-                    "ip_version",
-                    "src_ip",
-                    "dst_ip",
-                    "src_port",
-                    "dst_port",
-                    "ip_header_length",
-                    "total_length",
-                    "ttl",
-                    "fragment_offset",
-                    "tcp_seq_num",
-                    "tcp_ack_num",
-                    "tcp_window_size",
-                    "tcp_flags",
-                    "tcp_data_offset",
-                    "payload_length",
-                    "stream_id",
-                    "is_from_client",
-                    "tcp_state",
-                    "application_protocol",
-                    "payload",
-                ],
-                &[
-                    &arrival_time_utc.format("%Y-%m-%d %H:%M:%S%.6f").to_string(),
-                    &"TCP".to_string(),
-                    &ip_header.version.to_string(),
-                    &ip_header.src_ip.to_string(),
-                    &ip_header.dst_ip.to_string(),
-                    &tcp_header.src_port.to_string(),
-                    &tcp_header.dst_port.to_string(),
-                    &ip_header.ihl.to_string(),
-                    &ip_header.total_length.to_string(),
-                    &ip_header.ttl.to_string(),
-                    &ip_header.flags_fragment_offset.to_string(),
-                    &tcp_header.seq_num.to_string(),
-                    &tcp_header.ack_num.to_string(),
-                    &tcp_header.window.to_string(),
-                    &tcp_header.flags.to_string(),
-                    &tcp_header.data_offset.to_string(),
-                    &payload.len().to_string(),
-                    &format!("{:?}", stream_key),
-                    &(if is_from_client { "1" } else { "0" }),
-                    &format!("{:?}", state),
-                    &format!("{:?}", identify_protocol(tcp_header.src_port, tcp_header.dst_port, payload)),
-                    &payload_base64,
-                ],
-            )
-            .await?;
-    }
-
 
     Ok(())
 }
