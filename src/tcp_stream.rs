@@ -31,8 +31,8 @@ pub enum TcpState {
 #[derive(Debug)]
 pub struct TcpStream {
     pub state: TcpState,
-    pub client_isn: u32,
-    pub server_isn: u32,
+    pub client_init_seq: u32,
+    pub server_init_seq: u32,
     pub client_next_seq: u32,
     pub server_next_seq: u32,
     pub client_data: Vec<u8>,
@@ -50,13 +50,13 @@ pub struct TcpStream {
 pub type TcpStreamKey = (Ipv4Addr, u16, Ipv4Addr, u16);
 
 impl TcpStream {
-    pub fn new(client_isn: u32, server_isn: u32) -> Self {
+    pub fn new(client_init_seq: u32, server_init_seq: u32) -> Self {
         TcpStream {
             state: TcpState::SynSent,
-            client_isn,
-            server_isn,
-            client_next_seq: client_isn.wrapping_add(1),
-            server_next_seq: server_isn,
+            client_init_seq,
+            server_init_seq,
+            client_next_seq: client_init_seq.wrapping_add(1),
+            server_next_seq: server_init_seq,
             client_data: Vec::new(),
             server_data: Vec::new(),
             last_activity: Instant::now(),
