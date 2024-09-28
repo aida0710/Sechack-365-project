@@ -1,31 +1,16 @@
-use crate::async_log_inserter::AsyncLogInserter;
 use crate::ip_header::{parse_ip_header, IpHeader};
 use crate::ip_reassembly::IpReassembler;
-use crate::protocol_identifier::identify_protocol;
 use crate::tcp_header::{parse_tcp_header, parse_tcp_options};
 use crate::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::SystemTime;
 
-// 監視対象のポートリスト
-const PORTS_TO_RECORD: [u16; 7] = [
-    80,   // HTTP
-    21,   // FTP
-    23,   // Telnet
-    25,   // SMTP
-    110,  // POP3
-    143,  // IMAP
-    53,   // DNS
-];
-
-pub async fn process_packet<'a>(
-    packet: &'a pcap::Packet<'a>,
+// パケットを処理
+pub fn process_packet<>(
+    packet: & pcap::Packet<>,
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     ip_reassembler: &mut IpReassembler,
-    inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let arrival_time = SystemTime::now();
     let eth_header_size = 14; // Ethernetヘッダーのサイズ
@@ -41,18 +26,21 @@ pub async fn process_packet<'a>(
         // IPの再構築を試みる
         if let Some(reassembled_packet) = ip_reassembler.process_packet(&ip_header, payload) {
             // 再構築されたパケットを処理
-            process_reassembled_packet(
+            match process_reassembled_packet(
                 &ip_header,
                 &reassembled_packet,
                 streams,
                 arrival_time,
-                inserter.clone(),
-            )
-                .await?;
+            ) {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error processing reassembled packet: {}", e),
+            }
         } else {
             // フラグメントされていないパケットまたは再構築が完了していないパケットの処理
-            process_tcp_packet(&ip_header, payload, streams, arrival_time, inserter.clone())
-                .await?;
+            match process_tcp_packet(&ip_header, payload, streams, arrival_time) {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error processing TCP packet: {}", e),
+            }
         }
     }
 
@@ -64,12 +52,11 @@ pub async fn process_packet<'a>(
     Ok(())
 }
 
-async fn process_reassembled_packet(
+fn process_reassembled_packet(
     ip_header: &IpHeader,
     packet: &[u8],
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     arrival_time: SystemTime,
-    inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if ip_header.protocol != 6 {
         // TCPのプロトコル番号は6
@@ -78,26 +65,17 @@ async fn process_reassembled_packet(
 
     if let Some((tcp_header, tcp_header_size)) = parse_tcp_header(packet) {
         let payload = &packet[tcp_header_size..];
-        process_tcp_data(
-            ip_header,
-            &tcp_header,
-            payload,
-            streams,
-            arrival_time,
-            inserter,
-        )
-            .await?;
+        process_tcp_header_and_payload(ip_header, &tcp_header, payload, streams, arrival_time)?;
     }
 
     Ok(())
 }
 
-async fn process_tcp_packet(
+fn process_tcp_packet(
     ip_header: &IpHeader,
     tcp_data: &[u8],
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     arrival_time: SystemTime,
-    inserter: Arc<AsyncLogInserter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if ip_header.protocol != 6 {
         // TCPのプロトコル番号は6
@@ -106,27 +84,39 @@ async fn process_tcp_packet(
 
     if let Some((tcp_header, tcp_header_size)) = parse_tcp_header(tcp_data) {
         let payload = &tcp_data[tcp_header_size..];
-        process_tcp_data(
-            ip_header,
-            &tcp_header,
-            payload,
-            streams,
-            arrival_time,
-            inserter,
-        )
-            .await?;
+        process_tcp_header_and_payload(ip_header, &tcp_header, payload, streams, arrival_time)?;
     }
 
     Ok(())
 }
 
-async fn process_tcp_data(
+// TCPヘッダーとペイロードを処理
+fn process_tcp_header_and_payload(
     ip_header: &IpHeader,
     tcp_header: &crate::tcp_header::TcpHeader,
     payload: &[u8],
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     arrival_time: SystemTime,
-    inserter: Arc<AsyncLogInserter>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match process_tcp_data(
+        ip_header,
+        tcp_header,
+        payload,
+        streams,
+        arrival_time,
+    ) {
+        Ok(_) => (),
+        Err(e) => eprintln!("Error processing TCP data: {}", e),
+    }
+    Ok(())
+}
+
+fn process_tcp_data(
+    ip_header: &IpHeader,
+    tcp_header: &crate::tcp_header::TcpHeader,
+    payload: &[u8],
+    streams: &mut HashMap<TcpStreamKey, TcpStream>,
+    arrival_time: SystemTime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let stream_key = (
         ip_header.src_ip,
@@ -187,107 +177,11 @@ async fn process_tcp_data(
 
         stream.arrival_time = arrival_time;
 
-        let protocol = identify_protocol(tcp_header.src_port, tcp_header.dst_port, payload);
-
-
         println!("Arrival time: {}", arrival_time_to_string(arrival_time));
-        println!("Protocol: {:?}", protocol);
-        println!(
-            "Payload length: {}, TCP header data offset: {}",
-            payload.len(),
-            tcp_header.data_offset
-        );
         println!(
             "Stream: {}:{} -> {}:{}",
             stream_key.0, tcp_header.src_port, stream_key.2, tcp_header.dst_port
         );
-        println!("State: {:?}", stream.state);
-
-        // 監視対象のポートの場合のみ、詳細なログを出力
-        if PORTS_TO_RECORD.contains(&tcp_header.src_port) || PORTS_TO_RECORD.contains(&tcp_header.dst_port) {
-            println!("Client data: {} bytes", stream.client_data.len());
-            println!("Server data: {} bytes", stream.server_data.len());
-            println!("Client window: {}", stream.client_window);
-            println!("Server window: {}", stream.server_window);
-            println!("Client MSS: {}", stream.client_mss);
-            println!("Server MSS: {}", stream.server_mss);
-            println!("Client CWND: {}", stream.client_cwnd);
-            println!("Server CWND: {}", stream.server_cwnd);
-
-            // 確立された接続の場合、データの内容を表示
-            if stream.state == crate::tcp_stream::TcpState::Established {
-                if is_from_client {
-                    println!(
-                        "Client data: {:?}",
-                        String::from_utf8_lossy(&stream.client_data)
-                    );
-                } else {
-                    println!(
-                        "Server data: {:?}",
-                        String::from_utf8_lossy(&stream.server_data)
-                    );
-                }
-            }
-
-            // データベースへの挿入
-            let arrival_time_utc: DateTime<Utc> = arrival_time.into();
-            let payload_base64 = STANDARD.encode(payload);
-
-            inserter
-                .insert(
-                    "packet_log",
-                    &[
-                        "arrival_time",
-                        "protocol",
-                        "ip_version",
-                        "src_ip",
-                        "dst_ip",
-                        "src_port",
-                        "dst_port",
-                        "ip_header_length",
-                        "total_length",
-                        "ttl",
-                        "fragment_offset",
-                        "tcp_seq_num",
-                        "tcp_ack_num",
-                        "tcp_window_size",
-                        "tcp_flags",
-                        "tcp_data_offset",
-                        "payload_length",
-                        "stream_id",
-                        "is_from_client",
-                        "tcp_state",
-                        "application_protocol",
-                        "payload",
-                    ],
-                    &[
-                        &arrival_time_utc.format("%Y-%m-%d %H:%M:%S%.6f").to_string(),
-                        &"TCP".to_string(),
-                        &ip_header.version.to_string(),
-                        &ip_header.src_ip.to_string(),
-                        &ip_header.dst_ip.to_string(),
-                        &tcp_header.src_port.to_string(),
-                        &tcp_header.dst_port.to_string(),
-                        &ip_header.ihl.to_string(),
-                        &ip_header.total_length.to_string(),
-                        &ip_header.ttl.to_string(),
-                        &ip_header.flags_fragment_offset.to_string(),
-                        &tcp_header.seq_num.to_string(),
-                        &tcp_header.ack_num.to_string(),
-                        &tcp_header.window.to_string(),
-                        &tcp_header.flags.to_string(),
-                        &tcp_header.data_offset.to_string(),
-                        &payload.len().to_string(),
-                        &format!("{:?}", stream_key),
-                        &(if is_from_client { "1" } else { "0" }),
-                        &format!("{:?}", stream.state),
-                        &format!("{:?}", protocol),
-                        &payload_base64,
-                    ],
-                )
-                .await?;
-        }
-        println!("--------------------");
 
 
         // ストリームが閉じられた場合、ストリームを削除
