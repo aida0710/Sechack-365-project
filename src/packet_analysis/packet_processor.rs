@@ -1,6 +1,6 @@
-use crate::ip_header::{parse_ip_header, IpHeader};
-use crate::ip_reassembly::IpReassembler;
-use crate::tcp_header::{parse_tcp_header, parse_tcp_options};
+use crate::packet_analysis::ip_header::{parse_ip_header, IpHeader};
+use crate::packet_analysis::ip_reassembly::IpReassembler;
+use crate::packet_analysis::tcp_header::{parse_tcp_header, parse_tcp_options};
 use crate::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
 use chrono::{DateTime, Local};
 use std::collections::HashMap;
@@ -93,7 +93,7 @@ fn process_tcp_packet(
 // TCPヘッダーとペイロードを処理
 fn process_tcp_header_and_payload(
     ip_header: &IpHeader,
-    tcp_header: &crate::tcp_header::TcpHeader,
+    tcp_header: &crate::packet_analysis::tcp_header::TcpHeader,
     payload: &[u8],
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     arrival_time: SystemTime,
@@ -113,7 +113,7 @@ fn process_tcp_header_and_payload(
 
 fn process_tcp_data(
     ip_header: &IpHeader,
-    tcp_header: &crate::tcp_header::TcpHeader,
+    tcp_header: &crate::packet_analysis::tcp_header::TcpHeader,
     payload: &[u8],
     streams: &mut HashMap<TcpStreamKey, TcpStream>,
     arrival_time: SystemTime,

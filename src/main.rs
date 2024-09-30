@@ -4,17 +4,12 @@ use std::time::Duration;
 
 use pcap::{Capture, Device};
 use dotenv::dotenv;
+use crate::packet_analysis::ip_reassembly::IpReassembler;
+use crate::packet_analysis::packet_processor::process_packet;
+use crate::packet_analysis::tcp_stream;
+use crate::packet_analysis::tcp_stream::{TcpStream, TcpStreamKey};
 
-mod tcp_stream;
-mod ip_header;
-mod tcp_header;
-mod packet_processor;
-mod ip_reassembly;
-
-use ip_reassembly::IpReassembler;
-use packet_processor::process_packet;
-use tcp_stream::TcpStream;
-use tcp_stream::TcpStreamKey;
+mod packet_analysis;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // .envファイルを読み込む
