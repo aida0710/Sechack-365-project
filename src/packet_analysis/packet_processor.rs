@@ -1,7 +1,7 @@
 use crate::packet_analysis::ip_header::{parse_ip_header, IpHeader};
 use crate::packet_analysis::ip_reassembly::IpReassembler;
 use crate::packet_analysis::tcp_header::{parse_tcp_header, parse_tcp_options};
-use crate::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
+use crate::packet_analysis::tcp_stream::{TcpStream, TcpStreamKey, TCP_SYN};
 use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -185,7 +185,7 @@ fn process_tcp_data(
 
 
         // ストリームが閉じられた場合、ストリームを削除
-        if stream.state == crate::tcp_stream::TcpState::Closed {
+        if stream.state == crate::packet_analysis::tcp_stream::TcpState::Closed {
             streams.remove(&stream_key);
         }
     }

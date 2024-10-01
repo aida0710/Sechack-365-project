@@ -1,65 +1,30 @@
-use std::collections::HashMap;
-use std::io::{self, Write};
-use std::time::Duration;
-
-use pcap::{Capture, Device};
+use crate::select_device::select_device;
+use crate::send_packet::send_packet_settings::send_packet_settings;
 use dotenv::dotenv;
-use crate::packet_analysis::ip_reassembly::IpReassembler;
-use crate::packet_analysis::packet_processor::process_packet;
-use crate::packet_analysis::tcp_stream;
-use crate::packet_analysis::tcp_stream::{TcpStream, TcpStreamKey};
-
+use pcap::{Active, Capture, Device};
 mod packet_analysis;
+mod send_packet;
+mod select_device;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+use pnet::packet::MutablePacket;
+use std::error::Error;
+use crate::packet_analysis::packet_analysis::packet_analysis;
+
+fn main() -> Result<(), Box<dyn Error>> {
     // .envファイルを読み込む
     dotenv().ok();
+    let (mut cap, device): (Capture<Active>, Device) = select_device()?;
+    println!("デバイスの選択に成功しました: {}", device.name);
 
-    let device_list = Device::list()?;
-
-    println!("利用可能なデバイス:");
-    for (index, device) in device_list.iter().enumerate() {
-        println!("{}. {}", index + 1, device.name);
+    // 不正なip パケットを送信
+    if let Err(e) = send_packet_settings(&mut cap) {
+        println!("不正なIPパケットの送信に失敗しました: {}", e);
     }
 
-    print!("キャプチャするデバイスの番号を入力してください: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let device_index: usize = input.trim().parse()?;
-
-    if device_index == 0 || device_index > device_list.len() {
-        return Err("無効なデバイス番号です".into());
-    }
-
-    let selected_device = &device_list[device_index - 1];
-    println!("選択されたデバイス: {}", selected_device.name);
-
-    let mut cap = Capture::from_device(selected_device.clone())?
-        .promisc(true)
-        .snaplen(65535)
-        .timeout(0)
-        .immediate_mode(true)
-        .buffer_size(3 * 1024 * 1024)
-        .open()?;
-
-    println!("パケットのキャプチャを開始します。Ctrl+Cで終了します。");
-
-    let mut streams: HashMap<TcpStreamKey, TcpStream> = HashMap::new();
-    let mut ip_reassembler = IpReassembler::new(Duration::from_secs(30));
-
-    while let Ok(packet) = cap.next_packet() {
-        match process_packet(&packet, &mut streams, &mut ip_reassembler){
-            Ok(_) => (),
-            Err(e) => eprintln!("パケット処理中にエラーが発生しました: {}", e),
-        }
-
-        // 古いストリームの削除
-        streams.retain(|_, stream| {
-            stream.last_activity.elapsed() < Duration::from_secs(300) || stream.state != tcp_stream::TcpState::Closed
-        });
-    }
+    // パケット解析
+    /*if let Err(e) = packet_analysis(cap) {
+        println!("パケットの解析に失敗しました: {}", e);
+    }*/
 
     Ok(())
 }

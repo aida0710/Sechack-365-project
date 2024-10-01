@@ -1,5 +1,6 @@
-pub mod ip_header;
-pub mod ip_reassembly;
-pub mod packet_processor;
-pub mod tcp_header;
-pub mod tcp_stream;
+pub mod packet_analysis;
+mod ip_header;
+mod ip_reassembly;
+mod packet_processor;
+mod tcp_header;
+mod tcp_stream;
