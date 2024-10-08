@@ -1,10 +1,10 @@
-use crate::packet_analysis::ip_reassembly::IpReassembler;
-use crate::packet_analysis::packet_processor::process_packet;
-use crate::packet_analysis::tcp_stream;
-use crate::packet_analysis::tcp_stream::{TcpStream, TcpStreamKey};
+use crate::ip_reassembly::IpReassembler;
+use crate::packet_processor::process_packet;
 use pcap::{Active, Capture};
 use std::collections::HashMap;
 use std::time::Duration;
+use crate::tcp_stream;
+use crate::tcp_stream::{TcpStream, TcpStreamKey};
 
 pub fn packet_analysis(mut cap: Capture<Active>) -> Result<(), Box<dyn std::error::Error>> {
     let mut streams: HashMap<TcpStreamKey, TcpStream> = HashMap::new();
